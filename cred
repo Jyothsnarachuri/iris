@@ -1,0 +1,174 @@
+
+
+# 1. Import Libraries
+import numpy as np
+import pandas as pd
+import matplotlib.pyplot as plt
+import seaborn as sns
+
+from sklearn.model_selection import train_test_split, GridSearchCV
+from sklearn.preprocessing import StandardScaler
+from sklearn.metrics import (
+    classification_report, confusion_matrix, roc_auc_score,
+    roc_curve, ConfusionMatrixDisplay
+)
+from sklearn.ensemble import RandomForestClassifier
+from imblearn.over_sampling import SMOTE
+
+import warnings
+warnings.filterwarnings('ignore')
+
+# ======================================================
+# 2. Load Dataset
+# ======================================================
+
+# Make sure the CSV file is in the same folder or specify full path
+import pandas as pd
+
+df = pd.read_csv('credit.csv')  # match the exact file name in your folder
+print(df.head())
+
+
+print("✅ Dataset Loaded Successfully!")
+print(f"Shape: {df.shape}")
+print(df.head())
+
+# ======================================================
+# 3. Basic Data Exploration
+# ======================================================
+
+print("\n--- Missing Values ---")
+print(df.isnull().sum().sum())
+
+print("\n--- Class Distribution ---")
+print(df['Class'].value_counts(normalize=True))
+
+# Plot class distribution
+sns.countplot(data=df, x='Class')
+plt.title("Class Distribution (0 = Normal, 1 = Fraud)")
+plt.show()
+
+# ======================================================
+# 4. Feature Scaling
+# ======================================================
+
+scaler = StandardScaler()
+df['scaled_amount'] = scaler.fit_transform(df[['Amount']])
+df['scaled_time'] = scaler.fit_transform(df[['Time']])
+
+df = df.drop(['Amount', 'Time'], axis=1)
+
+# ======================================================
+# 5. Split Features and Target
+# ======================================================
+
+X = df.drop('Class', axis=1)
+y = df['Class']
+
+print("\nBefore SMOTE:")
+print(y.value_counts())
+
+# ======================================================
+# 6. Handle Class Imbalance (SMOTE)
+# ======================================================
+
+smote = SMOTE(random_state=42)
+X_res, y_res = smote.fit_resample(X, y)
+
+print("\nAfter SMOTE:")
+print(y_res.value_counts())
+
+# ======================================================
+# 7. Train-Test Split
+# ======================================================
+
+X_train, X_test, y_train, y_test = train_test_split(
+    X_res, y_res, test_size=0.2, random_state=42, stratify=y_res
+)
+
+print("\n✅ Data Split Done!")
+print(f"Train shape: {X_train.shape}, Test shape: {X_test.shape}")
+
+# ======================================================
+# 8. Train Random Forest Model
+# ======================================================
+
+rf = RandomForestClassifier(
+    n_estimators=200,
+    max_depth=None,
+    class_weight='balanced',
+    random_state=42
+)
+
+rf.fit(X_train, y_train)
+y_pred = rf.predict(X_test)
+y_pred_proba = rf.predict_proba(X_test)[:, 1]
+
+# ======================================================
+# 9. Evaluation
+# ======================================================
+
+print("\n--- Classification Report ---")
+print(classification_report(y_test, y_pred))
+
+roc_auc = roc_auc_score(y_test, y_pred_proba)
+print(f"ROC AUC Score: {roc_auc:.4f}")
+
+# Confusion Matrix
+cm = confusion_matrix(y_test, y_pred)
+ConfusionMatrixDisplay(cm, display_labels=["Normal", "Fraud"]).plot(cmap="Blues")
+plt.title("Confusion Matrix")
+plt.show()
+
+# ROC Curve
+fpr, tpr, _ = roc_curve(y_test, y_pred_proba)
+plt.plot(fpr, tpr, color='red', label=f'ROC curve (AUC = {roc_auc:.4f})')
+plt.plot([0, 1], [0, 1], color='gray', linestyle='--')
+plt.xlabel("False Positive Rate")
+plt.ylabel("True Positive Rate")
+plt.title("ROC Curve")
+plt.legend()
+plt.show()
+
+# ======================================================
+# 10. Hyperparameter Tuning (Optional)
+# ======================================================
+
+# Uncomment to run GridSearch (can take time)
+"""
+param_grid = {
+    'n_estimators': [100, 200],
+    'max_depth': [10, 20, None]
+}
+
+grid = GridSearchCV(
+    RandomForestClassifier(class_weight='balanced', random_state=42),
+    param_grid,
+    scoring='f1',
+    cv=3,
+    n_jobs=-1
+)
+
+grid.fit(X_train, y_train)
+print("\nBest Parameters:", grid.best_params_)
+"""
+
+# ======================================================
+# 11. Save Model for Deployment
+# ======================================================
+
+import pickle
+
+with open("fraud_model.pkl", "wb") as f:
+    pickle.dump(rf, f)
+
+print("\n💾 Model saved as 'fraud_model.pkl'")
+
+# ======================================================
+# 12. Predict on a New Transaction Example
+# ======================================================
+
+example = X_test.iloc[0:1]
+pred = rf.predict(example)
+print("\nExample Prediction:")
+print("Fraudulent" if pred[0] == 1 else "Legitimate")
